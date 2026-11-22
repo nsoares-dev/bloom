@@ -14,6 +14,7 @@ mod bluetooth;
 mod buds;
 #[cfg(windows)]
 mod commands;
+mod custom_icons;
 mod diagnostics;
 #[cfg(windows)]
 mod dock_extras;

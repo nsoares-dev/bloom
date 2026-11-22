@@ -9,7 +9,7 @@ use crate::services::*;
 use crate::state::*;
 use crate::utils::*;
 use crate::{
-    agent_alerts, battery, bluetooth, diagnostics, dock_extras, i18n, jack, onboarding, services,
+    agent_alerts, custom_icons, battery, bluetooth, diagnostics, dock_extras, i18n, jack, onboarding, services,
     settings_commands, updater, usb, utils, wifi, window_region,
 };
 
@@ -153,9 +153,9 @@ pub fn run() {
             save_pinned_apps,
             load_pinned_apps,
             clear_icon_cache,
-            set_custom_icon,
-            remove_custom_icon,
-            get_custom_icons,
+            custom_icons::set_custom_icon,
+            custom_icons::remove_custom_icon,
+            custom_icons::get_custom_icons,
             set_menu_open,
             focus_window,
             focus_app_windows,

@@ -16,6 +16,12 @@ fn unsupported(name: &str) -> String {
     format!("not yet implemented on macOS: {name}")
 }
 
+/// The error for a Windows feature macOS has no equivalent of (the interface
+/// hides those controls on a Mac).
+fn not_on_macos(name: &str) -> String {
+    format!("unsupported on macOS: {name}")
+}
+
 /// Serializes writes of pinned_apps.json from the dock.
 static PINNED_FILE_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
@@ -93,12 +99,14 @@ pub async fn close_settings_window(app: AppHandle) -> Result<(), String> {
 #[tauri::command]
 pub async fn quit_bloom(handle: AppHandle) {
     crate::state::SHUTTING_DOWN.store(true, std::sync::atomic::Ordering::Relaxed);
+    restore_native_dock(&handle);
     handle.exit(0);
 }
 
 #[tauri::command]
 pub async fn restart_bloom(handle: AppHandle) {
     crate::state::SHUTTING_DOWN.store(true, std::sync::atomic::Ordering::Relaxed);
+    restore_native_dock(&handle);
     handle.restart();
 }
 
@@ -124,6 +132,71 @@ pub static NOTCH: std::sync::OnceLock<Option<super::window::Notch>> = std::sync:
 #[tauri::command]
 pub fn get_notch() -> Option<super::window::Notch> {
     NOTCH.get().copied().flatten()
+}
+
+static INSTALLED_APPS: tokio::sync::Mutex<Option<Vec<AppInfo>>> = tokio::sync::Mutex::const_new(None);
+
+/// Apps in the Applications folders, scanned once and kept until refreshed.
+async fn installed_apps() -> Vec<AppInfo> {
+    let mut cache = INSTALLED_APPS.lock().await;
+    if cache.is_none() {
+        let home = std::env::var_os("HOME").map(std::path::PathBuf::from).unwrap_or_default();
+        let apps = tauri::async_runtime::spawn_blocking(move || {
+            super::apps::scan_apps(&super::apps::app_folders(&home))
+        })
+        .await
+        .unwrap_or_default();
+        *cache = Some(apps);
+    }
+    cache.clone().unwrap_or_default()
+}
+
+fn clear_installed_apps() {
+    if let Ok(mut cache) = INSTALLED_APPS.try_lock() {
+        *cache = None;
+    }
+}
+
+fn dock_enabled(app: &AppHandle) -> bool {
+    crate::settings_store::get_setting_str(app, "bloom-dock-enabled").as_deref() != Some("false")
+}
+
+fn config_dir(app: &AppHandle) -> Option<std::path::PathBuf> {
+    app.path().app_config_dir().ok()
+}
+
+/// Shows Bloom's dock and hides the macOS Dock behind it, unless the dock is
+/// turned off in settings.
+pub fn show_dock(app: &AppHandle) {
+    if !dock_enabled(app) {
+        hide_dock(app);
+        return;
+    }
+    if let Some(window) = app.get_webview_window("dock") {
+        let _ = window.show();
+    }
+    if let Some(dir) = config_dir(app) {
+        if let Err(error) = super::native_dock::hide(&dir) {
+            crate::diagnostics::record("native_dock_hide", &error);
+        }
+    }
+}
+
+/// Hides Bloom's dock and gives the macOS Dock back.
+pub fn hide_dock(app: &AppHandle) {
+    if let Some(window) = app.get_webview_window("dock") {
+        let _ = window.hide();
+    }
+    restore_native_dock(app);
+}
+
+/// Puts the user's macOS Dock settings back if Bloom changed them.
+pub fn restore_native_dock(app: &AppHandle) {
+    if let Some(dir) = config_dir(app) {
+        if let Err(error) = super::native_dock::restore(&dir) {
+            crate::diagnostics::record("native_dock_restore", &error);
+        }
+    }
 }
 
 // ---- Not ported yet ----
@@ -179,7 +252,7 @@ pub fn open_notification_center() {
 
 #[tauri::command]
 pub fn open_system_tray() {
-    unsupported("open_system_tray");
+    // macOS has no notification-area overflow to open.
 }
 
 #[tauri::command]
@@ -256,17 +329,21 @@ pub fn open_media_source_app() {
 
 #[tauri::command]
 pub async fn init_dock(app: AppHandle, mode: String) {
-    unsupported("init_dock");
+    show_dock(&app);
 }
 
 #[tauri::command]
 pub async fn toggle_dock(app: AppHandle, enable: bool) {
-    unsupported("toggle_dock");
+    if enable {
+        show_dock(&app);
+    } else {
+        hide_dock(&app);
+    }
 }
 
 #[tauri::command]
 pub async fn change_dock_mode(app: AppHandle, mode: String) {
-    unsupported("change_dock_mode");
+    // macOS keeps its dock in smart mode: nothing can reserve screen space.
 }
 
 #[tauri::command]
@@ -281,12 +358,22 @@ pub async fn sync_appbar(app: AppHandle) {
 
 #[tauri::command]
 pub async fn open_app(app: AppHandle, app_name: String) {
-    unsupported("open_app");
+    let target = match app_name.as_str() {
+        // The Windows Start button opens Launchpad's successor, the Apps view.
+        "start" => "/System/Applications/Apps.app".to_string(),
+        name if name.starts_with("ms-settings:") => "/System/Applications/System Settings.app".to_string(),
+        _ => app_name,
+    };
+    if let Err(error) = super::apps::open(&target, false) {
+        crate::diagnostics::record("open_app", &error);
+    }
 }
 
 #[tauri::command]
 pub async fn launch_new_instance(app_path: String, app_name: Option<String>) {
-    unsupported("launch_new_instance");
+    if let Err(error) = super::apps::open(&app_path, true) {
+        crate::diagnostics::record("launch_new_instance", &error);
+    }
 }
 
 #[tauri::command]
@@ -346,7 +433,9 @@ pub async fn shelf_open(path: String) -> Result<(), String> {
 
 #[tauri::command]
 pub async fn get_active_windows(app: AppHandle) -> Vec<AppInfo> {
-    Default::default()
+    tauri::async_runtime::spawn_blocking(super::apps::running_apps)
+        .await
+        .unwrap_or_default()
 }
 
 #[tauri::command]
@@ -356,17 +445,24 @@ pub async fn get_tray_apps() -> Vec<serde_json::Value> {
 
 #[tauri::command]
 pub async fn show_tray_context_menu(tray_id: String) -> Result<(), String> {
-    Err(unsupported("show_tray_context_menu"))
+    Err(not_on_macos("show_tray_context_menu"))
 }
 
 #[tauri::command]
 pub async fn activate_tray_icon(tray_id: String) -> Result<(), String> {
-    Err(unsupported("activate_tray_icon"))
+    Err(not_on_macos("activate_tray_icon"))
 }
 
 #[tauri::command]
 pub async fn open_system_action(action: serde_json::Value) -> Result<(), String> {
-    Err(unsupported("open_system_action"))
+    let action = action.as_str().unwrap_or_default().to_string();
+    let args = super::apps::system_action_target(&action)
+        .ok_or_else(|| format!("unsupported on macOS: {action}"))?;
+    std::process::Command::new("/usr/bin/open")
+        .args(args)
+        .status()
+        .map_err(|e| e.to_string())
+        .and_then(|s| s.success().then_some(()).ok_or_else(|| format!("could not open {action}")))
 }
 
 #[tauri::command]
@@ -376,45 +472,35 @@ pub async fn get_app_icon(
     name: Option<String>,
     hwnd: Option<isize>,
 ) -> Result<Option<String>, String> {
-    Err(unsupported("get_app_icon"))
+    // An icon the user picked for this app wins over the app's own.
+    let key = crate::custom_icons::get_cache_key(&path, name.as_deref());
+    if let Ok(dir) = crate::custom_icons::get_custom_icons_dir(&app) {
+        let file = dir.join(format!("{}.png", crate::custom_icons::sanitize_filename(&key)));
+        if let Ok(png) = std::fs::read(&file) {
+            use base64::Engine;
+            let b64 = base64::engine::general_purpose::STANDARD.encode(png);
+            return Ok(Some(format!("data:image/png;base64,{b64}")));
+        }
+    }
+    tauri::async_runtime::spawn_blocking(move || Ok(super::apps::icon(&path)))
+        .await
+        .map_err(|e| e.to_string())?
 }
 
 #[tauri::command]
 pub async fn get_installed_apps() -> Vec<AppInfo> {
-    Default::default()
+    installed_apps().await
 }
 
 #[tauri::command]
 pub fn refresh_installed_apps() {
-    unsupported("refresh_installed_apps");
+    clear_installed_apps();
 }
 
 #[tauri::command]
 pub async fn clear_icon_cache(app: AppHandle) -> Result<(), String> {
-    Err(unsupported("clear_icon_cache"))
-}
-
-#[tauri::command]
-pub async fn set_custom_icon(
-    app: AppHandle,
-    cache_key: String,
-    icon_data: String,
-) -> Result<String, String> {
-    Err(unsupported("set_custom_icon"))
-}
-
-#[tauri::command]
-pub async fn remove_custom_icon(
-    app: AppHandle,
-    path: String,
-    name: Option<String>,
-) -> Result<(), String> {
-    Err(unsupported("remove_custom_icon"))
-}
-
-#[tauri::command]
-pub async fn get_custom_icons(app: AppHandle) -> Result<HashMap<String, String>, String> {
-    Err(unsupported("get_custom_icons"))
+    super::apps::clear_icon_cache();
+    Ok(())
 }
 
 #[tauri::command]
@@ -424,17 +510,24 @@ pub async fn set_menu_open(open: bool, rect: Option<IntRect>) {
 
 #[tauri::command]
 pub async fn focus_window(app: AppHandle, hwnd: isize) -> bool {
-    false
+    tauri::async_runtime::spawn_blocking(move || super::apps::focus_window(hwnd))
+        .await
+        .unwrap_or(false)
 }
 
 #[tauri::command]
 pub async fn focus_app_windows(app: AppHandle, hwnds: Vec<isize>) {
-    unsupported("focus_app_windows");
+    if let Some(first) = hwnds.first().copied() {
+        let _ = tauri::async_runtime::spawn_blocking(move || super::apps::focus_window(first)).await;
+    }
 }
 
 #[tauri::command]
 pub async fn close_window(hwnd: isize) {
-    unsupported("close_window");
+    let result = tauri::async_runtime::spawn_blocking(move || super::apps::close_window(hwnd)).await;
+    if let Ok(Err(error)) = result {
+        crate::diagnostics::record("close_window", &error);
+    }
 }
 
 #[tauri::command]
@@ -488,7 +581,8 @@ pub async fn capture_window_thumbnail(
     max_width: u32,
     max_height: u32,
 ) -> Result<Option<(String, i64)>, String> {
-    Err(unsupported("capture_window_thumbnail"))
+    // Window previews need ScreenCaptureKit; the dock shows titles meanwhile.
+    Ok(None)
 }
 
 #[tauri::command]
@@ -583,22 +677,70 @@ pub fn get_update_state(app: AppHandle) -> serde_json::Value {
 
 #[tauri::command]
 pub async fn get_dock_extras(app: AppHandle) -> Vec<serde_json::Value> {
-    Default::default()
+    let setting = |key: &str, default: &str| {
+        crate::settings_store::get_setting_str(&app, key).unwrap_or_else(|| default.into())
+    };
+    let position = setting("bloom-dock-extras-position", "off");
+    if position != "left" && position != "right" {
+        return Vec::new();
+    }
+    let drives = setting("bloom-dock-extras-drives", "true") != "false";
+    let bin = setting("bloom-dock-extras-recycle-bin", "true") != "false";
+    let folders = setting("bloom-dock-extras-folders", "downloads");
+    let custom = setting("bloom-dock-extras-custom-folders", "[]");
+    tauri::async_runtime::spawn_blocking(move || {
+        use super::extras;
+        let home = extras::home();
+        let mut all = Vec::new();
+        if drives {
+            all.extend(extras::volumes(std::path::Path::new("/Volumes")));
+        }
+        all.extend(extras::known_folders(&home, &folders));
+        all.extend(extras::custom_folders(&custom));
+        if bin {
+            all.push(extras::trash(&home));
+        }
+        for extra in &mut all {
+            extra.icon = super::apps::icon(&extra.path);
+        }
+        all.into_iter()
+            .filter_map(|e| serde_json::to_value(e).ok())
+            .collect()
+    })
+    .await
+    .unwrap_or_default()
 }
 
 #[tauri::command]
 pub async fn open_dock_extra(kind: String, path: String) -> Result<(), String> {
-    Err(unsupported("open_dock_extra"))
+    super::apps::open(&path, false)
 }
 
 #[tauri::command]
 pub async fn eject_dock_extra(path: String) -> Result<(), String> {
-    Err(unsupported("eject_dock_extra"))
+    let status = tauri::async_runtime::spawn_blocking(move || {
+        std::process::Command::new("/usr/sbin/diskutil").args(["eject", &path]).status()
+    })
+    .await
+    .map_err(|e| e.to_string())?
+    .map_err(|e| e.to_string())?;
+    status.success().then_some(()).ok_or_else(|| "the volume could not be ejected".to_string())
 }
 
 #[tauri::command]
 pub async fn get_dock_drives() -> Vec<serde_json::Value> {
-    Default::default()
+    tauri::async_runtime::spawn_blocking(|| {
+        super::extras::volumes(std::path::Path::new("/Volumes"))
+            .into_iter()
+            .map(|mut e| {
+                e.icon = super::apps::icon(&e.path);
+                e
+            })
+            .filter_map(|e| serde_json::to_value(e).ok())
+            .collect()
+    })
+    .await
+    .unwrap_or_default()
 }
 
 #[tauri::command]

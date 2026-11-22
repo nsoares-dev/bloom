@@ -2,7 +2,11 @@
 //! the same commands, so the interface works unchanged on both systems.
 
 pub mod commands;
+pub mod apps;
+mod ax;
+mod extras;
 mod interaction;
+mod native_dock;
 mod window;
 
 use crate::{i18n, settings_commands};
@@ -79,9 +83,9 @@ pub fn run() {
             commands::save_pinned_apps,
             commands::load_pinned_apps,
             commands::clear_icon_cache,
-            commands::set_custom_icon,
-            commands::remove_custom_icon,
-            commands::get_custom_icons,
+            crate::custom_icons::set_custom_icon,
+            crate::custom_icons::remove_custom_icon,
+            crate::custom_icons::get_custom_icons,
             commands::set_menu_open,
             commands::focus_window,
             commands::focus_app_windows,
@@ -147,14 +151,64 @@ pub fn run() {
         .setup(|app| {
             crate::diagnostics::initialize();
             crate::settings_store::init_settings_cache(app.handle());
+            // A previous run that crashed may have left the macOS Dock hidden;
+            // the dock's init_dock hides it again if Bloom's dock is on.
+            commands::restore_native_dock(app.handle());
             let _ = commands::NOTCH.set(window::notch());
             place_windows(app.handle());
             interaction::spawn_worker(app.handle().clone());
+            watch_windows(app.handle().clone());
+            restore_on_signals(app.handle().clone());
             build_menu_bar_icon(app)?;
             Ok(())
         })
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application")
+        .run(|app, event| {
+            if let tauri::RunEvent::Exit = event {
+                commands::restore_native_dock(app);
+            }
+        });
+}
+
+/// Ctrl+C in a terminal, `kill`, or a logout's SIGTERM skip Tauri's exit
+/// event; give the macOS Dock back before going.
+fn restore_on_signals(app: tauri::AppHandle) {
+    use signal_hook::consts::{SIGHUP, SIGINT, SIGTERM};
+    let Ok(mut signals) = signal_hook::iterator::Signals::new([SIGINT, SIGTERM, SIGHUP]) else {
+        crate::diagnostics::record("signals", "could not install handlers");
+        return;
+    };
+    std::thread::Builder::new()
+        .name("bloom-signals".into())
+        .spawn(move || {
+            if let Some(signal) = signals.forever().next() {
+                crate::diagnostics::record("shutdown", &format!("signal {signal}"));
+                crate::state::SHUTTING_DOWN.store(true, std::sync::atomic::Ordering::Relaxed);
+                commands::restore_native_dock(&app);
+                std::process::exit(0);
+            }
+        })
+        .expect("failed to start the signal watcher");
+}
+
+/// Tells the dock when apps or windows come and go, checking once a second.
+fn watch_windows(app: tauri::AppHandle) {
+    use tauri::Emitter;
+    std::thread::Builder::new()
+        .name("bloom-window-watch".into())
+        .spawn(move || {
+            let mut last = apps::fingerprint();
+            while !crate::state::SHUTTING_DOWN.load(std::sync::atomic::Ordering::Relaxed) {
+                std::thread::sleep(std::time::Duration::from_secs(1));
+                let now = apps::fingerprint();
+                if now != last {
+                    let _ = app.emit("windows-changed", ());
+                    last = now;
+                }
+            }
+        })
+        .expect("failed to start the window watcher");
 }
 
 /// Spreads Bloom's windows over the main screen: the island across the top,
@@ -233,11 +287,13 @@ fn build_menu_bar_icon(app: &tauri::App) -> tauri::Result<()> {
             "restart" => {
                 crate::diagnostics::record("restart", "source=menu bar");
                 crate::state::SHUTTING_DOWN.store(true, std::sync::atomic::Ordering::Relaxed);
+                commands::restore_native_dock(app);
                 app.restart();
             }
             "quit" => {
                 crate::diagnostics::record("shutdown", "source=menu bar");
                 crate::state::SHUTTING_DOWN.store(true, std::sync::atomic::Ordering::Relaxed);
+                commands::restore_native_dock(app);
                 app.exit(0);
             }
             _ => {}
