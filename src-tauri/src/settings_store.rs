@@ -128,7 +128,7 @@ pub fn get_setting_str(_app: &tauri::AppHandle, key: &str) -> Option<String> {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     /// Every test that touches the settings file or cache holds this, on
     /// every platform, because the cache is process-wide.
     pub(crate) static TEST_SETTINGS_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());

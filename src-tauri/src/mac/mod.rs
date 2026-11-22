@@ -180,6 +180,10 @@ fn place_windows(app: &tauri::AppHandle) {
         let Some(window) = app.get_webview_window(label) else { continue };
         let _ = window.set_size(LogicalSize::new(screen.width, height));
         let _ = window.set_position(LogicalPosition::new(origin.x, origin.y + y));
+        // Click-through until stage 2 ports hit testing: these transparent
+        // always-on-top windows cover the screen and would otherwise take
+        // every click meant for the apps underneath (as on Windows at startup).
+        let _ = window.set_ignore_cursor_events(true);
         if show {
             let _ = window.show();
         }

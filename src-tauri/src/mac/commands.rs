@@ -166,7 +166,7 @@ pub fn open_system_tray() {
 
 #[tauri::command]
 pub fn set_ignore_cursor_events(window: Window, ignore: bool) {
-    unsupported("set_ignore_cursor_events");
+    let _ = window.set_ignore_cursor_events(ignore);
 }
 
 #[tauri::command]
