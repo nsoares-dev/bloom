@@ -2,6 +2,8 @@
 //! the same commands, so the interface works unchanged on both systems.
 
 pub mod commands;
+mod interaction;
+mod window;
 
 use crate::{i18n, settings_commands};
 
@@ -139,12 +141,15 @@ pub fn run() {
             commands::bluetooth_unpair,
             commands::bluetooth_refresh_buds,
             commands::usb_list_devices,
-            commands::jack_list_devices
+            commands::jack_list_devices,
+            commands::get_notch
         ])
         .setup(|app| {
             crate::diagnostics::initialize();
             crate::settings_store::init_settings_cache(app.handle());
+            let _ = commands::NOTCH.set(window::notch());
             place_windows(app.handle());
+            interaction::spawn_worker(app.handle().clone());
             build_menu_bar_icon(app)?;
             Ok(())
         })
@@ -156,13 +161,19 @@ pub fn run() {
 /// the dock along the bottom and the overlay over everything. Sizes come from
 /// tauri.conf.json; positions are in logical points.
 fn place_windows(app: &tauri::AppHandle) {
-    use tauri::{LogicalPosition, LogicalSize, Manager};
+    use tauri::Manager;
     let Some(monitor) = app.primary_monitor().ok().flatten() else {
         crate::diagnostics::record("place_windows", "no primary monitor");
         return;
     };
     let screen = monitor.size().to_logical::<f64>(monitor.scale_factor());
     let origin = monitor.position().to_logical::<f64>(monitor.scale_factor());
+    let screen_rect = interaction::Rect {
+        x: origin.x,
+        y: origin.y,
+        width: screen.width,
+        height: screen.height,
+    };
     let config_height = |label: &str| {
         app.config()
             .app
@@ -174,15 +185,21 @@ fn place_windows(app: &tauri::AppHandle) {
     };
     for (label, y, height, show) in [
         ("main", 0.0, config_height("main"), true),
-        ("dock", screen.height - config_height("dock"), config_height("dock"), true),
+        (
+            "dock",
+            screen.height - config_height("dock"),
+            config_height("dock"),
+            true,
+        ),
         ("overlay", 0.0, screen.height, false),
     ] {
-        let Some(window) = app.get_webview_window(label) else { continue };
-        let _ = window.set_size(LogicalSize::new(screen.width, height));
-        let _ = window.set_position(LogicalPosition::new(origin.x, origin.y + y));
-        // Click-through until stage 2 ports hit testing: these transparent
-        // always-on-top windows cover the screen and would otherwise take
-        // every click meant for the apps underneath (as on Windows at startup).
+        let Some(window) = app.get_webview_window(label) else {
+            continue;
+        };
+        window::float_and_place(&window, y, height);
+        interaction::set_window_origin(label, screen_rect, (origin.x, origin.y + y));
+        // Click-through until the cursor worker sees the pointer over what the
+        // window draws; these transparent windows cover most of the screen.
         let _ = window.set_ignore_cursor_events(true);
         if show {
             let _ = window.show();
@@ -199,9 +216,13 @@ fn build_menu_bar_icon(app: &tauri::App) -> tauri::Result<()> {
     let restart = MenuItem::with_id(app, "restart", "Restart Bloom", true, None::<&str>)?;
     let quit = MenuItem::with_id(app, "quit", "Quit Bloom", true, None::<&str>)?;
     let menu = Menu::with_items(app, &[&settings, &restart, &quit])?;
-    app.manage(i18n::TrayMessages { settings, restart, quit });
-    let locale = crate::settings_store::get_setting_str(app.handle(), "bloom-language")
-        .unwrap_or_default();
+    app.manage(i18n::TrayMessages {
+        settings,
+        restart,
+        quit,
+    });
+    let locale =
+        crate::settings_store::get_setting_str(app.handle(), "bloom-language").unwrap_or_default();
     let _ = i18n::set_tray_language(app.handle().clone(), locale);
     TrayIconBuilder::new()
         .icon(app.default_window_icon().cloned().expect("bundle icon"))

@@ -17,10 +17,11 @@ pub fn save_setting(app: AppHandle, key: String, value: serde_json::Value) -> Re
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
     }
-    let settings = crate::settings_store::save_setting_file(&path, key.clone(), value).map_err(|error| {
-        crate::diagnostics::record("settings_save_failed", &format!("key={key} error={error}"));
-        error
-    })?;
+    let settings =
+        crate::settings_store::save_setting_file(&path, key.clone(), value).map_err(|error| {
+            crate::diagnostics::record("settings_save_failed", &format!("key={key} error={error}"));
+            error
+        })?;
 
     // Broadcast so all windows sync — emit the key as-is (bloom-prefixed)
     let _ = app.emit(
@@ -169,7 +170,9 @@ fn apply_imported_settings(app: &AppHandle, settings: &str) -> Result<(), String
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
     }
-    let _guard = crate::settings_store::SETTINGS_FILE_LOCK.lock().map_err(|e| e.to_string())?;
+    let _guard = crate::settings_store::SETTINGS_FILE_LOCK
+        .lock()
+        .map_err(|e| e.to_string())?;
     let previous = crate::settings_store::read_settings_file(&path)?;
     crate::settings_store::write_settings_file(&path, &imported)?;
     crate::settings_store::replace_settings_cache(imported.clone());
@@ -220,7 +223,9 @@ pub fn reset_settings(app: AppHandle) -> Result<(), String> {
     // replaying the splash after a reset). Everything else falls back to
     // defaults in both the backend and the frontends.
     let keep = ["bloom-first-run", "bloom-app-version"];
-    let _guard = crate::settings_store::SETTINGS_FILE_LOCK.lock().map_err(|e| e.to_string())?;
+    let _guard = crate::settings_store::SETTINGS_FILE_LOCK
+        .lock()
+        .map_err(|e| e.to_string())?;
     let mut settings = crate::settings_store::read_settings_file(&path)?;
     let removed: Vec<String> = settings
         .keys()

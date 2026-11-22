@@ -4,14 +4,14 @@ use windows::core::BOOL;
 use windows::Win32::System::Console::SetConsoleCtrlHandler;
 use windows::Win32::System::Console::{CTRL_BREAK_EVENT, CTRL_CLOSE_EVENT, CTRL_C_EVENT};
 
-use crate::{
-    agent_alerts, battery, bluetooth, diagnostics, dock_extras, i18n, jack, onboarding, services,
-    settings_commands, updater, usb, utils, wifi, window_region,
-};
 use crate::commands::*;
 use crate::services::*;
 use crate::state::*;
 use crate::utils::*;
+use crate::{
+    agent_alerts, battery, bluetooth, diagnostics, dock_extras, i18n, jack, onboarding, services,
+    settings_commands, updater, usb, utils, wifi, window_region,
+};
 
 unsafe extern "system" fn ctrl_handler(ctrl_type: u32) -> BOOL {
     if ctrl_type == CTRL_C_EVENT || ctrl_type == CTRL_BREAK_EVENT || ctrl_type == CTRL_CLOSE_EVENT {

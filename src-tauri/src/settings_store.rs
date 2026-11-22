@@ -76,9 +76,7 @@ pub fn save_setting_file(
     key: String,
     value: serde_json::Value,
 ) -> Result<std::collections::HashMap<String, serde_json::Value>, String> {
-    let _guard = SETTINGS_FILE_LOCK
-        .lock()
-        .map_err(|e| e.to_string())?;
+    let _guard = SETTINGS_FILE_LOCK.lock().map_err(|e| e.to_string())?;
     let mut settings = read_settings_file(path)?;
     settings.insert(key, value);
     write_settings_file(path, &settings)?;
@@ -88,8 +86,8 @@ pub fn save_setting_file(
 
 /// Load settings.json into the in-memory cache. Call once at startup.
 pub fn init_settings_cache(app: &tauri::AppHandle) {
-    use SETTINGS_CACHE;
     use tauri::Manager;
+    use SETTINGS_CACHE;
     let cache =
         SETTINGS_CACHE.get_or_init(|| std::sync::Mutex::new(std::collections::HashMap::new()));
     if let Some(path) = app
@@ -113,8 +111,8 @@ pub fn init_settings_cache(app: &tauri::AppHandle) {
 /// on the main thread inside a WebView2 callback cannot unwind, which aborts
 /// the process.
 pub fn replace_settings_cache(new_settings: std::collections::HashMap<String, serde_json::Value>) {
-    let cache = SETTINGS_CACHE
-        .get_or_init(|| std::sync::Mutex::new(std::collections::HashMap::new()));
+    let cache =
+        SETTINGS_CACHE.get_or_init(|| std::sync::Mutex::new(std::collections::HashMap::new()));
     if let Ok(mut cache) = cache.lock() {
         *cache = new_settings;
     }

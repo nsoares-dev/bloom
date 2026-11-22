@@ -46,6 +46,7 @@ import { Calendar, calendarRows } from "./components/Calendar";
 import { useConnectedDevices } from "./hooks/useConnectedDevices";
 import { isWiredAudio, usbArtFor, usbDisplayName, type UsbIdentity } from "./devices/usbArtFor";
 import type { DeviceArtKey } from "./devices/art";
+import { useMacNotch } from "./macNotch";
 import {
 	Cpu,
 	MemoryStick,
@@ -629,6 +630,7 @@ function App() {
 	const [isOpen, setIsOpen] = useState(false);
 	const isOpenRef = useRef(false);
 	isOpenRef.current = isOpen;
+	const macNotch = useMacNotch();
 	const [isReady, setIsReady] = useState(false);
 	const [scale, setScale] = useState(() =>
 		parseFloat(localStorage.getItem("bloom-scale") || "1.0")
@@ -3226,14 +3228,26 @@ function App() {
 	// window region below is cut from it, so the region is already at the
 	// final size while the pill animates.
 	const pillTargetY = !isReady ? 250 : isVisible ? (isHidden ? -100 : 0) : -150;
+	const pillExpanded = isExpanded && isVisible && !isHidden;
+	// On a Mac with a notch the resting pill is the notch itself, and every
+	// other state grows from it: the pill gains the notch's height and its
+	// content starts below the camera (macNotch.ts).
+	const notchWidth = macNotch && isReady ? macNotch.width / scale : 0;
+	const notchHeight = macNotch && isReady ? macNotch.height / scale : 0;
 	const pillTargetWidth = !isReady
 		? 34
-		: isExpanded && isVisible && !isHidden
-			? getDynamicWidth()
-			: isImpacted
-				? 39.1
-				: 30.6;
-	const pillTargetHeight = !isReady ? 34 : getDynamicHeight();
+		: pillExpanded
+			? Math.max(getDynamicWidth(), notchWidth)
+			: macNotch
+				? notchWidth
+				: isImpacted
+					? 39.1
+					: 30.6;
+	const pillTargetHeight = !isReady
+		? 34
+		: macNotch && !pillExpanded
+			? notchHeight
+			: getDynamicHeight() + notchHeight;
 	// Shadow and the edge flares beside the pill.
 	pillTargetRef.current = notchPillBox(
 		window.innerWidth,
@@ -3326,7 +3340,7 @@ function App() {
 						if (bloomMode === "shelf") clearShelfCollapse();
 					}}
 					onHoverEnd={releaseNotchHover}
-					style={{ originY: 0 }}
+					style={{ originY: 0, paddingTop: pillExpanded ? notchHeight : 0 }}
 					transition={{
 						width: { type: "spring", stiffness: 400, damping: 31 },
 						height: { type: "spring", stiffness: 450, damping: 29 },

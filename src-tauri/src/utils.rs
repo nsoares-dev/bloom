@@ -1173,7 +1173,6 @@ pub fn get_bloom_scale(_app: &tauri::AppHandle) -> f64 {
         .unwrap_or(1.0)
 }
 
-
 fn dock_setting_enabled(value: Option<&serde_json::Value>) -> bool {
     value.is_none_or(|value| value.as_str() == Some("true"))
 }
@@ -1505,9 +1504,8 @@ mod tests {
             NOACTIVATE | LAYERED
         );
     }
-    use std::collections::HashMap;
     use crate::settings_store::tests::{test_settings_path, TEST_SETTINGS_LOCK};
-
+    use std::collections::HashMap;
 
     #[test]
     fn atomic_settings_save_retries_a_temporary_windows_file_lock() {

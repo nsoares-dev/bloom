@@ -11,7 +11,10 @@ fn handler_names(src: &str) -> BTreeSet<String> {
         Some(i) => i + "generate_handler![".len(),
         None => return BTreeSet::new(),
     };
-    let end = start + src[start..].find(']').expect("unterminated generate_handler!");
+    let end = start
+        + src[start..]
+            .find(']')
+            .expect("unterminated generate_handler!");
     src[start..end]
         .split(',')
         .map(|item| item.trim())
@@ -46,13 +49,19 @@ fn collect_invokes(dir: &Path, out: &mut BTreeSet<String>) {
                     None => continue,
                 }
             }
-            let Some(tail) = tail.strip_prefix('(') else { continue };
+            let Some(tail) = tail.strip_prefix('(') else {
+                continue;
+            };
             let tail = tail.trim_start();
             let Some(quote) = tail.chars().next().filter(|c| *c == '"' || *c == '\'') else {
                 continue;
             };
             let name: String = tail[1..].chars().take_while(|c| *c != quote).collect();
-            if !name.is_empty() && name.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_') {
+            if !name.is_empty()
+                && name
+                    .chars()
+                    .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_')
+            {
                 out.insert(name);
             }
         }
@@ -61,15 +70,31 @@ fn collect_invokes(dir: &Path, out: &mut BTreeSet<String>) {
 
 fn frontend_invokes() -> BTreeSet<String> {
     let mut names = BTreeSet::new();
-    collect_invokes(&Path::new(env!("CARGO_MANIFEST_DIR")).join("../src"), &mut names);
+    collect_invokes(
+        &Path::new(env!("CARGO_MANIFEST_DIR")).join("../src"),
+        &mut names,
+    );
     names
 }
+
+/// Commands only macOS has; the interface calls them only on a Mac.
+const MAC_ONLY: &[&str] = &["get_notch"];
 
 #[test]
 fn mac_registers_same_commands_as_windows() {
     let win = handler_names(include_str!("../win_main.rs"));
-    let mac = handler_names(include_str!("mod.rs"));
-    assert!(win.len() > 100, "parsed only {} Windows commands", win.len());
+    let mut mac = handler_names(include_str!("mod.rs"));
+    for name in MAC_ONLY {
+        assert!(
+            mac.remove(*name),
+            "MAC_ONLY lists `{name}`, which macOS doesn't register"
+        );
+    }
+    assert!(
+        win.len() > 100,
+        "parsed only {} Windows commands",
+        win.len()
+    );
     let missing: Vec<_> = win.difference(&mac).collect();
     let extra: Vec<_> = mac.difference(&win).collect();
     assert!(
@@ -82,7 +107,14 @@ fn mac_registers_same_commands_as_windows() {
 fn every_frontend_invoke_is_registered_on_mac() {
     let mac = handler_names(include_str!("mod.rs"));
     let invokes = frontend_invokes();
-    assert!(invokes.len() > 50, "found only {} frontend invokes", invokes.len());
+    assert!(
+        invokes.len() > 50,
+        "found only {} frontend invokes",
+        invokes.len()
+    );
     let missing: Vec<_> = invokes.iter().filter(|n| !mac.contains(*n)).collect();
-    assert!(missing.is_empty(), "frontend calls these, not registered on macOS: {missing:?}");
+    assert!(
+        missing.is_empty(),
+        "frontend calls these, not registered on macOS: {missing:?}"
+    );
 }

@@ -117,6 +117,15 @@ pub async fn shelf_prune(paths: Vec<String>) -> Vec<String> {
         .collect()
 }
 
+/// The main screen's notch, measured at startup (macOS only; the interface
+/// asks for it only on a Mac).
+pub static NOTCH: std::sync::OnceLock<Option<super::window::Notch>> = std::sync::OnceLock::new();
+
+#[tauri::command]
+pub fn get_notch() -> Option<super::window::Notch> {
+    NOTCH.get().copied().flatten()
+}
+
 // ---- Not ported yet ----
 
 #[tauri::command]
@@ -125,12 +134,21 @@ pub fn agent_alert_status(app: AppHandle) -> Result<serde_json::Value, String> {
 }
 
 #[tauri::command]
-pub async fn configure_agent_alert(app: AppHandle, agent: String, install: bool) -> Result<(), String> {
+pub async fn configure_agent_alert(
+    app: AppHandle,
+    agent: String,
+    install: bool,
+) -> Result<(), String> {
     Err(unsupported("configure_agent_alert"))
 }
 
 #[tauri::command]
-pub fn test_agent_alert(app: AppHandle, agent: String, kind: String, activity: Option<String>) -> Result<(), String> {
+pub fn test_agent_alert(
+    app: AppHandle,
+    agent: String,
+    kind: String,
+    activity: Option<String>,
+) -> Result<(), String> {
     Err(unsupported("test_agent_alert"))
 }
 
@@ -141,7 +159,7 @@ pub fn agent_alerts_quiet() -> bool {
 
 #[tauri::command]
 pub fn hide_native_osd() {
-    unsupported("hide_native_osd");
+    // macOS has no supported way to hide its volume/brightness HUD.
 }
 
 #[tauri::command]
@@ -171,7 +189,9 @@ pub fn set_ignore_cursor_events(window: Window, ignore: bool) {
 
 #[tauri::command]
 pub fn set_window_height(window: Window, height: f64) {
-    unsupported("set_window_height");
+    if let (Ok(scale), Ok(size)) = (window.scale_factor(), window.inner_size()) {
+        let _ = window.set_size(tauri::LogicalSize::new(size.width as f64 / scale, height));
+    }
 }
 
 #[tauri::command]
@@ -206,7 +226,7 @@ pub fn set_onboarding_active(app: AppHandle, window: Window, active: bool) -> Re
 
 #[tauri::command]
 pub fn sync_overlay_position(app: AppHandle) {
-    unsupported("sync_overlay_position");
+    // Windows are placed once at startup and on display changes.
 }
 
 #[tauri::command]
@@ -251,12 +271,12 @@ pub async fn change_dock_mode(app: AppHandle, mode: String) {
 
 #[tauri::command]
 pub async fn change_notch_mode(app: AppHandle, mode: String) {
-    unsupported("change_notch_mode");
+    // The island reads its mode from settings; macOS reserves no space for it.
 }
 
 #[tauri::command]
 pub async fn sync_appbar(app: AppHandle) {
-    unsupported("sync_appbar");
+    // macOS has no AppBars; nothing reserves screen space.
 }
 
 #[tauri::command]
@@ -271,22 +291,22 @@ pub async fn launch_new_instance(app_path: String, app_name: Option<String>) {
 
 #[tauri::command]
 pub async fn update_dock_rect(rect: IntRect, overlap_rect: Option<IntRect>) {
-    unsupported("update_dock_rect");
+    // The dock's drawn area arrives through set_window_region.
 }
 
 #[tauri::command]
 pub async fn update_notch_rect(rect: IntRect) {
-    unsupported("update_notch_rect");
+    // The island's drawn area arrives through set_window_region.
 }
 
 #[tauri::command]
 pub fn set_window_region(window: Window, rects: Vec<IntRect>) {
-    unsupported("set_window_region");
+    super::interaction::set_window_rects(window.label(), rects);
 }
 
 #[tauri::command]
 pub async fn set_dock_hovered(hovered: bool) {
-    unsupported("set_dock_hovered");
+    super::interaction::DOCK_HOVERED.store(hovered, std::sync::atomic::Ordering::Relaxed);
 }
 
 #[tauri::command]
@@ -296,12 +316,12 @@ pub fn set_dock_popup_active(app: AppHandle, window: Window, active: bool) {
 
 #[tauri::command]
 pub async fn set_notch_hovered(app: AppHandle, hovered: bool) {
-    unsupported("set_notch_hovered");
+    super::interaction::NOTCH_HOVERED.store(hovered, std::sync::atomic::Ordering::Relaxed);
 }
 
 #[tauri::command]
 pub async fn set_notch_visible(visible: bool) {
-    unsupported("set_notch_visible");
+    // Click-through follows what the island draws, so visibility needs no state.
 }
 
 #[tauri::command]
@@ -350,7 +370,12 @@ pub async fn open_system_action(action: serde_json::Value) -> Result<(), String>
 }
 
 #[tauri::command]
-pub async fn get_app_icon(app: AppHandle, path: String, name: Option<String>, hwnd: Option<isize>) -> Result<Option<String>, String> {
+pub async fn get_app_icon(
+    app: AppHandle,
+    path: String,
+    name: Option<String>,
+    hwnd: Option<isize>,
+) -> Result<Option<String>, String> {
     Err(unsupported("get_app_icon"))
 }
 
@@ -370,12 +395,20 @@ pub async fn clear_icon_cache(app: AppHandle) -> Result<(), String> {
 }
 
 #[tauri::command]
-pub async fn set_custom_icon(app: AppHandle, cache_key: String, icon_data: String) -> Result<String, String> {
+pub async fn set_custom_icon(
+    app: AppHandle,
+    cache_key: String,
+    icon_data: String,
+) -> Result<String, String> {
     Err(unsupported("set_custom_icon"))
 }
 
 #[tauri::command]
-pub async fn remove_custom_icon(app: AppHandle, path: String, name: Option<String>) -> Result<(), String> {
+pub async fn remove_custom_icon(
+    app: AppHandle,
+    path: String,
+    name: Option<String>,
+) -> Result<(), String> {
     Err(unsupported("remove_custom_icon"))
 }
 
@@ -386,7 +419,7 @@ pub async fn get_custom_icons(app: AppHandle) -> Result<HashMap<String, String>,
 
 #[tauri::command]
 pub async fn set_menu_open(open: bool, rect: Option<IntRect>) {
-    unsupported("set_menu_open");
+    // Menus draw inside the dock's window region, which already takes clicks.
 }
 
 #[tauri::command]
@@ -450,7 +483,11 @@ pub fn clear_volume_mixer_rect() {
 }
 
 #[tauri::command]
-pub async fn capture_window_thumbnail(hwnd: isize, max_width: u32, max_height: u32) -> Result<Option<(String, i64)>, String> {
+pub async fn capture_window_thumbnail(
+    hwnd: isize,
+    max_width: u32,
+    max_height: u32,
+) -> Result<Option<(String, i64)>, String> {
     Err(unsupported("capture_window_thumbnail"))
 }
 
