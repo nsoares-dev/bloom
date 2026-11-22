@@ -285,32 +285,17 @@ pub fn set_window_height(window: Window, height: f64) {
 
 #[tauri::command]
 pub fn resize_settings_window(app: AppHandle, width: f64, height: f64) {
-    unsupported("resize_settings_window");
+    if let Some(window) = app.get_webview_window("settings") {
+        let _ = window.set_size(tauri::LogicalSize::new(width, height));
+    }
 }
 
 #[tauri::command]
 pub fn set_splash_fullscreen(app: AppHandle, fullscreen: bool) {
-    unsupported("set_splash_fullscreen");
-}
-
-#[tauri::command]
-pub fn get_onboarding_completed(app: AppHandle) -> Result<bool, String> {
-    Err(unsupported("get_onboarding_completed"))
-}
-
-#[tauri::command]
-pub fn complete_onboarding(app: AppHandle, window: Window) -> Result<(), String> {
-    Err(unsupported("complete_onboarding"))
-}
-
-#[tauri::command]
-pub fn open_onboarding(app: AppHandle) -> Result<(), String> {
-    Err(unsupported("open_onboarding"))
-}
-
-#[tauri::command]
-pub fn set_onboarding_active(app: AppHandle, window: Window, active: bool) -> Result<(), String> {
-    Err(unsupported("set_onboarding_active"))
+    crate::state::OVERLAY_IN_SPLASH.store(fullscreen, std::sync::atomic::Ordering::Relaxed);
+    if let Some(window) = app.get_webview_window("overlay") {
+        let _ = if fullscreen { window.show() } else { window.hide() };
+    }
 }
 
 #[tauri::command]
@@ -416,7 +401,7 @@ pub async fn set_dock_hovered(hovered: bool) {
 
 #[tauri::command]
 pub fn set_dock_popup_active(app: AppHandle, window: Window, active: bool) {
-    unsupported("set_dock_popup_active");
+    // Windows closes its Start menu here; macOS has nothing in the way.
 }
 
 #[tauri::command]
@@ -431,7 +416,7 @@ pub async fn set_notch_visible(visible: bool) {
 
 #[tauri::command]
 pub fn setup_shelf_drop(app: AppHandle) {
-    unsupported("setup_shelf_drop");
+    // Tauri's own drop target works on macOS.
 }
 
 #[tauri::command]
@@ -446,7 +431,7 @@ pub fn shelf_drag_icon() -> Option<String> {
 
 #[tauri::command]
 pub async fn shelf_open(path: String) -> Result<(), String> {
-    Err(unsupported("shelf_open"))
+    super::apps::open(&path, false)
 }
 
 #[tauri::command]
@@ -572,27 +557,28 @@ pub fn set_volume(volume: f32) {
 
 #[tauri::command]
 pub async fn get_audio_sessions() -> Result<Vec<AudioSessionInfo>, String> {
-    Err(unsupported("get_audio_sessions"))
+    // macOS has no per-app volume; the mixer stays empty.
+    Ok(Vec::new())
 }
 
 #[tauri::command]
 pub async fn set_app_volume(pid: u32, volume: f32) -> Result<(), String> {
-    Err(unsupported("set_app_volume"))
+    Err(not_on_macos("set_app_volume"))
 }
 
 #[tauri::command]
 pub async fn set_app_mute(pid: u32, muted: bool) -> Result<(), String> {
-    Err(unsupported("set_app_mute"))
+    Err(not_on_macos("set_app_mute"))
 }
 
 #[tauri::command]
 pub fn set_volume_mixer_rect(x: f64, y: f64, width: f64, height: f64) {
-    unsupported("set_volume_mixer_rect");
+    // No per-app mixer on macOS.
 }
 
 #[tauri::command]
 pub fn clear_volume_mixer_rect() {
-    unsupported("clear_volume_mixer_rect");
+    // No per-app mixer on macOS.
 }
 
 #[tauri::command]
@@ -687,12 +673,13 @@ pub fn get_network_speed() -> Result<(u64, u64), String> {
 
 #[tauri::command]
 pub async fn check_for_updates(app: AppHandle, force: bool) -> Result<serde_json::Value, String> {
-    Err(unsupported("check_for_updates"))
+    // Updates install Windows packages; the Mac build updates from git.
+    Ok(serde_json::json!({ "available": false }))
 }
 
 #[tauri::command]
 pub async fn install_update(app: AppHandle) -> Result<(), String> {
-    Err(unsupported("install_update"))
+    Err(not_on_macos("install_update"))
 }
 
 #[tauri::command]
@@ -806,37 +793,43 @@ pub fn wifi_open_settings(page: String) -> Result<(), String> {
 
 #[tauri::command]
 pub async fn bluetooth_list_devices() -> Result<Vec<serde_json::Value>, String> {
-    Err(unsupported("bluetooth_list_devices"))
+    tauri::async_runtime::spawn_blocking(super::bluetooth::devices)
+        .await
+        .map_err(|e| e.to_string())?
+        .map(|list| list.into_iter().filter_map(|d| serde_json::to_value(d).ok()).collect())
 }
 
 #[tauri::command]
 pub async fn bluetooth_set_connected(id: String, connected: bool) -> Result<(), String> {
-    Err(unsupported("bluetooth_set_connected"))
+    tauri::async_runtime::spawn_blocking(move || super::bluetooth::set_connected(&id, connected))
+        .await
+        .map_err(|e| e.to_string())?
 }
 
 #[tauri::command]
 pub async fn bluetooth_discovery(active: bool) -> Result<(), String> {
-    Err(unsupported("bluetooth_discovery"))
+    Err(not_on_macos("bluetooth_discovery: pair new devices in System Settings"))
 }
 
 #[tauri::command]
 pub async fn bluetooth_pair(id: String) -> Result<(), String> {
-    Err(unsupported("bluetooth_pair"))
+    Err(not_on_macos("bluetooth_pair: pair new devices in System Settings"))
 }
 
 #[tauri::command]
 pub fn bluetooth_pairing_respond(accept: bool, pin: Option<String>) {
-    unsupported("bluetooth_pairing_respond");
+    // Pairing happens in System Settings on macOS.
 }
 
 #[tauri::command]
 pub async fn bluetooth_unpair(id: String) -> Result<(), String> {
-    Err(unsupported("bluetooth_unpair"))
+    Err(not_on_macos("bluetooth_unpair: remove devices in System Settings"))
 }
 
 #[tauri::command]
 pub async fn bluetooth_refresh_buds() -> Result<(), String> {
-    Err(unsupported("bluetooth_refresh_buds"))
+    // Earbud levels come with every bluetooth_list_devices.
+    Ok(())
 }
 
 #[tauri::command]

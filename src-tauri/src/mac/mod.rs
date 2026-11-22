@@ -4,6 +4,7 @@
 pub mod commands;
 pub mod apps;
 mod ax;
+mod bluetooth;
 mod extras;
 mod hardware;
 mod interaction;
@@ -48,10 +49,10 @@ pub fn run() {
             commands::resize_settings_window,
             commands::hide_overlay,
             commands::set_splash_fullscreen,
-            commands::get_onboarding_completed,
-            commands::complete_onboarding,
-            commands::open_onboarding,
-            commands::set_onboarding_active,
+            crate::onboarding::get_onboarding_completed,
+            crate::onboarding::complete_onboarding,
+            crate::onboarding::open_onboarding,
+            crate::onboarding::set_onboarding_active,
             commands::sync_overlay_position,
             commands::media_play_pause,
             commands::media_next,
@@ -156,6 +157,9 @@ pub fn run() {
         .setup(|app| {
             crate::diagnostics::initialize();
             crate::settings_store::init_settings_cache(app.handle());
+            if let Err(error) = crate::onboarding::initialize(app.handle()) {
+                crate::diagnostics::record("onboarding_state", &error);
+            }
             // A previous run that crashed may have left the macOS Dock hidden;
             // the dock's init_dock hides it again if Bloom's dock is on.
             commands::restore_native_dock(app.handle());

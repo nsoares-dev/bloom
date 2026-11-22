@@ -304,6 +304,10 @@ fn apply(app: &AppHandle, last: Option<Decision>, now: Decision) {
         ("dock", |d: &Decision| d.dock_interactive),
         ("overlay", |d: &Decision| d.overlay_interactive),
     ] {
+        // Setup owns the overlay's input while it runs.
+        if label == "overlay" && crate::state::ONBOARDING_ACTIVE.load(Ordering::Relaxed) {
+            continue;
+        }
         if changed(interactive) {
             if let Some(window) = app.get_webview_window(label) {
                 let _ = window.set_ignore_cursor_events(!interactive(&now));

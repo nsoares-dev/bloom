@@ -1,10 +1,9 @@
 import { invoke } from "@tauri-apps/api/core";
 import { useEffect, useState } from "react";
+import { isMac } from "./platform";
 
 /** The camera housing at the top of a Mac screen, in points. */
 export type MacNotch = { x: number; width: number; height: number };
-
-const isMac = navigator.userAgent.includes("Mac OS X");
 
 /** The main screen's notch on a Mac that has one; null everywhere else. */
 export function useMacNotch(): MacNotch | null {

@@ -23,6 +23,7 @@ import {
 	X
 } from "lucide-react";
 import { SettingRow } from "./SettingRow";
+import { isMac } from "../platform";
 import {
 	KNOWN_FOLDER_OPTIONS,
 	driveLetter,
@@ -220,7 +221,8 @@ export function DockTab({
 								value={dockMode}
 								onChange={(e) => setDockModeValue(e.target.value)}
 							>
-								<option value="fixed">{t("common.behavior.fixed")}</option>
+								{/* macOS can't reserve screen space for the dock. */}
+								{!isMac && <option value="fixed">{t("common.behavior.fixed")}</option>}
 								<option value="smart">{t("common.behavior.smart")}</option>
 								<option value="peek">{t("common.behavior.peek")}</option>
 							</select>

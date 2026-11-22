@@ -21,7 +21,6 @@ mod dock_extras;
 mod i18n;
 #[cfg(windows)]
 mod jack;
-#[cfg(windows)]
 mod onboarding;
 #[cfg(windows)]
 mod services;

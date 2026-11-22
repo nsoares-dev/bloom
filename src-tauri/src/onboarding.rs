@@ -36,7 +36,7 @@ fn initialize_at(directory: &Path) -> Result<(), String> {
 }
 
 fn write_state(path: &Path, state: &State) -> Result<(), String> {
-    crate::utils::atomic_write_file(path, &serde_json::to_vec(state).map_err(|e| e.to_string())?)
+    crate::settings_store::atomic_write_file(path, &serde_json::to_vec(state).map_err(|e| e.to_string())?)
 }
 
 pub fn initialize(app: &AppHandle) -> Result<(), String> {
@@ -80,6 +80,24 @@ pub fn set_onboarding_active(app: AppHandle, window: Window, active: bool) -> Re
     let overlay = app
         .get_webview_window("overlay")
         .ok_or("Overlay is unavailable")?;
+    #[cfg(target_os = "macos")]
+    {
+        // Setup takes the whole screen while it runs; the cursor worker leaves
+        // the overlay alone, so its click-through is set here.
+        crate::state::ONBOARDING_ACTIVE.store(active, Ordering::Relaxed);
+        if active {
+            overlay.show().map_err(|e| e.to_string())?;
+            overlay.set_ignore_cursor_events(false).map_err(|e| e.to_string())?;
+            overlay.set_focus().map_err(|e| e.to_string())?;
+        } else {
+            overlay.set_ignore_cursor_events(true).map_err(|e| e.to_string())?;
+            overlay.hide().map_err(|e| e.to_string())?;
+        }
+        let _ = &PREVIOUS_FOREGROUND;
+        Ok(())
+    }
+    #[cfg(windows)]
+    {
     let hwnd = overlay.hwnd().map_err(|e| e.to_string())?;
     use windows::Win32::Foundation::HWND;
     use windows::Win32::UI::WindowsAndMessaging::{
@@ -117,6 +135,7 @@ pub fn set_onboarding_active(app: AppHandle, window: Window, active: bool) -> Re
         }
     }
     Ok(())
+    }
 }
 
 #[cfg(test)]

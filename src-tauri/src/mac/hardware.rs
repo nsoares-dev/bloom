@@ -184,7 +184,7 @@ pub fn set_brightness(percent: u32) -> Result<(), String> {
 /// macOS ends any process that touches Bluetooth unless it runs from an .app
 /// whose Info.plist says why (src-tauri/Info.plist); a development build run
 /// as a bare binary would be killed.
-fn bluetooth_allowed() -> bool {
+pub fn bluetooth_allowed() -> bool {
     use objc2_foundation::{NSBundle, NSString};
     let bundle = NSBundle::mainBundle();
     bundle.bundlePath().to_string().ends_with(".app")
@@ -205,6 +205,13 @@ fn bluetooth_powered_from_profiler() -> Result<bool, String> {
         .find_map(|l| l.trim().strip_prefix("State: "))
         .map(|state| state.trim() == "On")
         .ok_or_else(|| "Bluetooth state not found".to_string())
+}
+
+/// Loads IOBluetooth so its Objective-C classes can be looked up.
+pub fn load_iobluetooth() -> Result<(), String> {
+    // SAFETY: NUL-terminated path; a null handle is reported.
+    let handle = unsafe { dlopen(IOBLUETOOTH.as_ptr(), RTLD_LAZY) };
+    (!handle.is_null()).then_some(()).ok_or_else(|| "IOBluetooth unavailable".into())
 }
 
 pub fn bluetooth_powered() -> Result<bool, String> {
