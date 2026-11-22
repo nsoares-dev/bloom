@@ -7,11 +7,20 @@ use std::time::{SystemTime, UNIX_EPOCH};
 const MAX_LOG_BYTES: u64 = 1024 * 1024;
 static LOG_PATH: OnceLock<Mutex<PathBuf>> = OnceLock::new();
 
+/// Where diagnostics.log lives: %LOCALAPPDATA%\\com.sehaz.bloom on Windows,
+/// ~/Library/Logs/com.sehaz.bloom on macOS.
+fn log_directory() -> Option<PathBuf> {
+    #[cfg(target_os = "macos")]
+    let base = std::env::var_os("HOME").map(|home| PathBuf::from(home).join("Library/Logs"));
+    #[cfg(not(target_os = "macos"))]
+    let base = std::env::var_os("LOCALAPPDATA").map(PathBuf::from);
+    base.map(|base| base.join("com.sehaz.bloom"))
+}
+
 pub fn initialize() {
-    let Some(local_data) = std::env::var_os("LOCALAPPDATA") else {
+    let Some(directory) = log_directory() else {
         return;
     };
-    let directory = PathBuf::from(local_data).join("com.sehaz.bloom");
     if fs::create_dir_all(&directory).is_err() {
         return;
     }
@@ -89,6 +98,16 @@ fn append_line(path: &Path, line: &str) -> io::Result<()> {
 
 #[cfg(test)]
 mod tests {
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn macos_logs_go_to_the_user_logs_folder() {
+        let home = std::env::var_os("HOME").unwrap();
+        assert_eq!(
+            super::log_directory(),
+            Some(std::path::PathBuf::from(home).join("Library/Logs/com.sehaz.bloom"))
+        );
+    }
+
     use super::{append_line, MAX_LOG_BYTES};
 
     #[test]

@@ -7,6 +7,11 @@ use crate::{i18n, settings_commands};
 
 pub fn run() {
     tauri::Builder::default()
+        // Registered first so a second launch exits before building anything;
+        // the running instance opens Settings, as on Windows.
+        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+            commands::open_settings_window(app.clone());
+        }))
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_clipboard_manager::init())
@@ -139,10 +144,81 @@ pub fn run() {
         .setup(|app| {
             crate::diagnostics::initialize();
             crate::settings_store::init_settings_cache(app.handle());
+            place_windows(app.handle());
+            build_menu_bar_icon(app)?;
             Ok(())
         })
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
+}
+
+/// Spreads Bloom's windows over the main screen: the island across the top,
+/// the dock along the bottom and the overlay over everything. Sizes come from
+/// tauri.conf.json; positions are in logical points.
+fn place_windows(app: &tauri::AppHandle) {
+    use tauri::{LogicalPosition, LogicalSize, Manager};
+    let Some(monitor) = app.primary_monitor().ok().flatten() else {
+        crate::diagnostics::record("place_windows", "no primary monitor");
+        return;
+    };
+    let screen = monitor.size().to_logical::<f64>(monitor.scale_factor());
+    let origin = monitor.position().to_logical::<f64>(monitor.scale_factor());
+    let config_height = |label: &str| {
+        app.config()
+            .app
+            .windows
+            .iter()
+            .find(|w| w.label == label)
+            .map(|w| w.height)
+            .unwrap_or(0.0)
+    };
+    for (label, y, height, show) in [
+        ("main", 0.0, config_height("main"), true),
+        ("dock", screen.height - config_height("dock"), config_height("dock"), true),
+        ("overlay", 0.0, screen.height, false),
+    ] {
+        let Some(window) = app.get_webview_window(label) else { continue };
+        let _ = window.set_size(LogicalSize::new(screen.width, height));
+        let _ = window.set_position(LogicalPosition::new(origin.x, origin.y + y));
+        if show {
+            let _ = window.show();
+        }
+    }
+}
+
+/// Bloom's icon in the menu bar, with the same menu as the Windows tray.
+fn build_menu_bar_icon(app: &tauri::App) -> tauri::Result<()> {
+    use tauri::menu::{Menu, MenuItem};
+    use tauri::tray::TrayIconBuilder;
+    use tauri::Manager;
+    let settings = MenuItem::with_id(app, "settings", "Open Settings", true, None::<&str>)?;
+    let restart = MenuItem::with_id(app, "restart", "Restart Bloom", true, None::<&str>)?;
+    let quit = MenuItem::with_id(app, "quit", "Quit Bloom", true, None::<&str>)?;
+    let menu = Menu::with_items(app, &[&settings, &restart, &quit])?;
+    app.manage(i18n::TrayMessages { settings, restart, quit });
+    let locale = crate::settings_store::get_setting_str(app.handle(), "bloom-language")
+        .unwrap_or_default();
+    let _ = i18n::set_tray_language(app.handle().clone(), locale);
+    TrayIconBuilder::new()
+        .icon(app.default_window_icon().cloned().expect("bundle icon"))
+        .tooltip("Bloom")
+        .menu(&menu)
+        .on_menu_event(|app, event| match event.id().as_ref() {
+            "settings" => commands::open_settings_window(app.clone()),
+            "restart" => {
+                crate::diagnostics::record("restart", "source=menu bar");
+                crate::state::SHUTTING_DOWN.store(true, std::sync::atomic::Ordering::Relaxed);
+                app.restart();
+            }
+            "quit" => {
+                crate::diagnostics::record("shutdown", "source=menu bar");
+                crate::state::SHUTTING_DOWN.store(true, std::sync::atomic::Ordering::Relaxed);
+                app.exit(0);
+            }
+            _ => {}
+        })
+        .build(app)?;
+    Ok(())
 }
 
 #[cfg(test)]
