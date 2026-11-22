@@ -61,6 +61,7 @@ pub static CURRENT_FOREGROUND_MAXIMIZED: AtomicBool = AtomicBool::new(false);
 pub static SINGLE_INSTANCE_MUTEX_HANDLE: OnceLock<isize> = OnceLock::new();
 pub static SINGLE_INSTANCE_EVENT_HANDLE: OnceLock<isize> = OnceLock::new();
 
+#[cfg(windows)]
 pub fn close_single_instance_handles() {
     use windows::Win32::Foundation::CloseHandle;
     use windows::Win32::Foundation::HANDLE;
@@ -100,7 +101,5 @@ pub static PROCESS_NAME_CACHE: OnceLock<Mutex<HashMap<String, String>>> = OnceLo
 
 pub static THUMBNAIL_CACHE: OnceLock<Mutex<HashMap<isize, (String, i64)>>> = OnceLock::new();
 pub static FOCUS_TIMESTAMPS: OnceLock<Mutex<HashMap<isize, i64>>> = OnceLock::new();
-pub static SETTINGS_CACHE: OnceLock<Mutex<HashMap<String, serde_json::Value>>> = OnceLock::new();
-/// Serialize read/modify/write settings commands from all four webviews.
-pub static SETTINGS_FILE_LOCK: Mutex<()> = Mutex::new(());
+pub use crate::settings_store::{SETTINGS_CACHE, SETTINGS_FILE_LOCK};
 pub static PINNED_FILE_LOCK: Mutex<()> = Mutex::new(());

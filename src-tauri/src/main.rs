@@ -1,4 +1,6 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+// Shared state still mirrors Windows; macOS uses more of it with each port stage.
+#![cfg_attr(target_os = "macos", allow(dead_code, unused_imports))]
 
 // Modules without an attribute build on every platform; the rest still talk
 // to Windows directly and build only there.
@@ -22,13 +24,14 @@ mod jack;
 mod onboarding;
 #[cfg(windows)]
 mod services;
+mod settings_commands;
+mod settings_store;
 #[cfg(windows)]
 mod settings_window;
 #[cfg(windows)]
 mod shelf;
 #[cfg(windows)]
 mod shelf_preview;
-#[cfg(windows)]
 mod state;
 #[cfg(windows)]
 mod tray;

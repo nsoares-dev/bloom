@@ -6,7 +6,7 @@ use windows::Win32::System::Console::{CTRL_BREAK_EVENT, CTRL_CLOSE_EVENT, CTRL_C
 
 use crate::{
     agent_alerts, battery, bluetooth, diagnostics, dock_extras, i18n, jack, onboarding, services,
-    updater, usb, utils, wifi, window_region,
+    settings_commands, updater, usb, utils, wifi, window_region,
 };
 use crate::commands::*;
 use crate::services::*;
@@ -171,10 +171,10 @@ pub fn run() {
             set_app_mute,
             set_volume_mixer_rect,
             clear_volume_mixer_rect,
-            save_setting,
+            settings_commands::save_setting,
             i18n::set_tray_language,
-            load_settings,
-            settings_file_readable,
+            settings_commands::load_settings,
+            settings_commands::settings_file_readable,
             capture_window_thumbnail,
             get_wifi_status,
             set_wifi_state,
@@ -191,9 +191,9 @@ pub fn run() {
             get_ram_usage,
             get_disk_space,
             get_network_speed,
-            export_settings_to_file,
-            import_settings_from_file,
-            reset_settings,
+            settings_commands::export_settings_to_file,
+            settings_commands::import_settings_from_file,
+            settings_commands::reset_settings,
             updater::check_for_updates,
             updater::install_update,
             updater::get_update_state,
