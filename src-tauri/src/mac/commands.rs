@@ -199,6 +199,17 @@ pub fn restore_native_dock(app: &AppHandle) {
     }
 }
 
+/// Sends a transport command to the player the island shows, off the main thread.
+fn media_command(command: &str) {
+    let Some(player) = super::media::current_player() else { return };
+    let command = command.to_string();
+    std::thread::spawn(move || {
+        if let Err(error) = super::media::control(player, &command) {
+            crate::diagnostics::record("media_command", &error);
+        }
+    });
+}
+
 // ---- Not ported yet ----
 
 #[tauri::command]
@@ -304,27 +315,29 @@ pub fn sync_overlay_position(app: AppHandle) {
 
 #[tauri::command]
 pub fn media_play_pause() {
-    unsupported("media_play_pause");
+    media_command("playpause");
 }
 
 #[tauri::command]
 pub fn media_next() {
-    unsupported("media_next");
+    media_command("next track");
 }
 
 #[tauri::command]
 pub fn media_previous() {
-    unsupported("media_previous");
+    media_command("previous track");
 }
 
 #[tauri::command]
 pub fn media_seek(position_ms: f64) {
-    unsupported("media_seek");
+    media_command(&format!("set player position to {}", (position_ms / 1000.0).max(0.0)));
 }
 
 #[tauri::command]
 pub fn open_media_source_app() {
-    unsupported("open_media_source_app");
+    if let Some(player) = super::media::current_player() {
+        let _ = super::apps::open(player.app_name(), false);
+    }
 }
 
 #[tauri::command]

@@ -157,121 +157,6 @@ pub fn decide(edges: &mut Edges, frame: &Frame) -> Decision {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn rect(x: i32, y: i32, width: i32, height: i32) -> IntRect {
-        IntRect {
-            x,
-            y,
-            width,
-            height,
-        }
-    }
-
-    /// A 1470x956 screen with the island drawing a 200x40 pill at the top
-    /// center and the dock window (600 tall) drawing a 500x70 bar at its bottom.
-    fn frame(cursor: (f64, f64), now_ms: i64) -> Frame {
-        Frame {
-            cursor,
-            screen: Rect {
-                x: 0.0,
-                y: 0.0,
-                width: 1470.0,
-                height: 956.0,
-            },
-            main: WindowRegion {
-                origin: (0.0, 0.0),
-                rects: vec![rect(635, 0, 200, 40)],
-            },
-            dock: WindowRegion {
-                origin: (0.0, 356.0),
-                rects: vec![rect(485, 520, 500, 70)],
-            },
-            overlay: WindowRegion::default(),
-            notch_hovered: false,
-            dock_hovered: false,
-            now_ms,
-            top_dwell_ms: EDGE_DWELL_MS,
-            bottom_dwell_ms: EDGE_DWELL_MS,
-        }
-    }
-
-    #[test]
-    fn clicks_pass_through_where_nothing_is_drawn() {
-        let decision = decide(&mut Edges::default(), &frame((300.0, 500.0), 0));
-        assert_eq!(decision, Decision::default());
-    }
-
-    #[test]
-    fn a_window_takes_the_mouse_over_what_it_draws() {
-        let decision = decide(&mut Edges::default(), &frame((700.0, 20.0), 0));
-        assert!(decision.main_interactive);
-        assert!(!decision.dock_interactive);
-
-        // Dock rect sits at y 356+520 = 876 on screen.
-        let decision = decide(&mut Edges::default(), &frame((700.0, 900.0), 0));
-        assert!(decision.dock_interactive);
-        assert!(!decision.main_interactive);
-    }
-
-    #[test]
-    fn the_top_edge_reveals_the_island_only_after_the_dwell() {
-        let mut edges = Edges::default();
-        assert!(!decide(&mut edges, &frame((100.0, 2.0), 1000)).notch_edge_hover);
-        assert!(!decide(&mut edges, &frame((100.0, 2.0), 1199)).notch_edge_hover);
-        assert!(decide(&mut edges, &frame((100.0, 2.0), 1200)).notch_edge_hover);
-    }
-
-    #[test]
-    fn leaving_the_edge_resets_the_dwell() {
-        let mut edges = Edges::default();
-        decide(&mut edges, &frame((100.0, 2.0), 1000));
-        decide(&mut edges, &frame((100.0, 300.0), 1100));
-        assert!(!decide(&mut edges, &frame((100.0, 2.0), 1250)).notch_edge_hover);
-        assert!(decide(&mut edges, &frame((100.0, 2.0), 1450)).notch_edge_hover);
-    }
-
-    #[test]
-    fn a_zero_delay_reveals_at_once() {
-        let mut f = frame((100.0, 2.0), 0);
-        f.top_dwell_ms = 0;
-        assert!(decide(&mut Edges::default(), &f).notch_edge_hover);
-    }
-
-    #[test]
-    fn the_bottom_edge_reveals_the_dock_and_takes_its_clicks() {
-        let mut edges = Edges::default();
-        decide(&mut edges, &frame((100.0, 954.0), 0));
-        let decision = decide(&mut edges, &frame((100.0, 954.0), 250));
-        assert!(decision.dock_edge_hover);
-        assert!(decision.dock_interactive);
-    }
-
-    #[test]
-    fn the_island_keeps_its_hover_while_its_webview_reports_one() {
-        let mut f = frame((700.0, 60.0), 0);
-        f.notch_hovered = true;
-        let decision = decide(&mut Edges::default(), &f);
-        assert!(decision.notch_edge_hover);
-        // Below the pill and off the top edge, clicks still pass through.
-        assert!(!decision.main_interactive);
-    }
-
-    #[test]
-    fn the_top_edge_near_the_island_takes_clicks_once_armed() {
-        let mut edges = Edges::default();
-        decide(&mut edges, &frame((600.0, 1.0), 0));
-        let decision = decide(&mut edges, &frame((600.0, 1.0), 250));
-        assert!(decision.main_interactive);
-        // Far from the island the edge reveals it but never blocks clicks.
-        let mut edges = Edges::default();
-        decide(&mut edges, &frame((50.0, 1.0), 0));
-        let decision = decide(&mut edges, &frame((50.0, 1.0), 250));
-        assert!(decision.notch_edge_hover && !decision.main_interactive);
-    }
-}
 
 // ---- Runtime: shared state fed by the webviews, and the cursor worker ----
 
@@ -434,5 +319,121 @@ fn apply(app: &AppHandle, last: Option<Decision>, now: Decision) {
     // A click-through webview never sees the pointer leave; tell the island.
     if !now.main_interactive && NOTCH_HOVERED.swap(false, Ordering::Relaxed) {
         let _ = app.emit("notch-pointer-left", ());
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn rect(x: i32, y: i32, width: i32, height: i32) -> IntRect {
+        IntRect {
+            x,
+            y,
+            width,
+            height,
+        }
+    }
+
+    /// A 1470x956 screen with the island drawing a 200x40 pill at the top
+    /// center and the dock window (600 tall) drawing a 500x70 bar at its bottom.
+    fn frame(cursor: (f64, f64), now_ms: i64) -> Frame {
+        Frame {
+            cursor,
+            screen: Rect {
+                x: 0.0,
+                y: 0.0,
+                width: 1470.0,
+                height: 956.0,
+            },
+            main: WindowRegion {
+                origin: (0.0, 0.0),
+                rects: vec![rect(635, 0, 200, 40)],
+            },
+            dock: WindowRegion {
+                origin: (0.0, 356.0),
+                rects: vec![rect(485, 520, 500, 70)],
+            },
+            overlay: WindowRegion::default(),
+            notch_hovered: false,
+            dock_hovered: false,
+            now_ms,
+            top_dwell_ms: EDGE_DWELL_MS,
+            bottom_dwell_ms: EDGE_DWELL_MS,
+        }
+    }
+
+    #[test]
+    fn clicks_pass_through_where_nothing_is_drawn() {
+        let decision = decide(&mut Edges::default(), &frame((300.0, 500.0), 0));
+        assert_eq!(decision, Decision::default());
+    }
+
+    #[test]
+    fn a_window_takes_the_mouse_over_what_it_draws() {
+        let decision = decide(&mut Edges::default(), &frame((700.0, 20.0), 0));
+        assert!(decision.main_interactive);
+        assert!(!decision.dock_interactive);
+
+        // Dock rect sits at y 356+520 = 876 on screen.
+        let decision = decide(&mut Edges::default(), &frame((700.0, 900.0), 0));
+        assert!(decision.dock_interactive);
+        assert!(!decision.main_interactive);
+    }
+
+    #[test]
+    fn the_top_edge_reveals_the_island_only_after_the_dwell() {
+        let mut edges = Edges::default();
+        assert!(!decide(&mut edges, &frame((100.0, 2.0), 1000)).notch_edge_hover);
+        assert!(!decide(&mut edges, &frame((100.0, 2.0), 1199)).notch_edge_hover);
+        assert!(decide(&mut edges, &frame((100.0, 2.0), 1200)).notch_edge_hover);
+    }
+
+    #[test]
+    fn leaving_the_edge_resets_the_dwell() {
+        let mut edges = Edges::default();
+        decide(&mut edges, &frame((100.0, 2.0), 1000));
+        decide(&mut edges, &frame((100.0, 300.0), 1100));
+        assert!(!decide(&mut edges, &frame((100.0, 2.0), 1250)).notch_edge_hover);
+        assert!(decide(&mut edges, &frame((100.0, 2.0), 1450)).notch_edge_hover);
+    }
+
+    #[test]
+    fn a_zero_delay_reveals_at_once() {
+        let mut f = frame((100.0, 2.0), 0);
+        f.top_dwell_ms = 0;
+        assert!(decide(&mut Edges::default(), &f).notch_edge_hover);
+    }
+
+    #[test]
+    fn the_bottom_edge_reveals_the_dock_and_takes_its_clicks() {
+        let mut edges = Edges::default();
+        decide(&mut edges, &frame((100.0, 954.0), 0));
+        let decision = decide(&mut edges, &frame((100.0, 954.0), 250));
+        assert!(decision.dock_edge_hover);
+        assert!(decision.dock_interactive);
+    }
+
+    #[test]
+    fn the_island_keeps_its_hover_while_its_webview_reports_one() {
+        let mut f = frame((700.0, 60.0), 0);
+        f.notch_hovered = true;
+        let decision = decide(&mut Edges::default(), &f);
+        assert!(decision.notch_edge_hover);
+        // Below the pill and off the top edge, clicks still pass through.
+        assert!(!decision.main_interactive);
+    }
+
+    #[test]
+    fn the_top_edge_near_the_island_takes_clicks_once_armed() {
+        let mut edges = Edges::default();
+        decide(&mut edges, &frame((600.0, 1.0), 0));
+        let decision = decide(&mut edges, &frame((600.0, 1.0), 250));
+        assert!(decision.main_interactive);
+        // Far from the island the edge reveals it but never blocks clicks.
+        let mut edges = Edges::default();
+        decide(&mut edges, &frame((50.0, 1.0), 0));
+        let decision = decide(&mut edges, &frame((50.0, 1.0), 250));
+        assert!(decision.notch_edge_hover && !decision.main_interactive);
     }
 }

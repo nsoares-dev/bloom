@@ -6,6 +6,7 @@ pub mod apps;
 mod ax;
 mod extras;
 mod interaction;
+mod media;
 mod native_dock;
 mod window;
 
@@ -158,6 +159,7 @@ pub fn run() {
             place_windows(app.handle());
             interaction::spawn_worker(app.handle().clone());
             watch_windows(app.handle().clone());
+            media::spawn_worker(app.handle().clone());
             restore_on_signals(app.handle().clone());
             build_menu_bar_icon(app)?;
             Ok(())
