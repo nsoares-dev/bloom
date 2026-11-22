@@ -147,13 +147,15 @@ pub fn activate_pid(pid: i32) -> bool {
 
 // ---- Opening apps ----
 
-/// Opens an app by its bundle path, or by name when it isn't a path.
+/// Opens a path or URL, or an app by name.
 pub fn open(target: &str, new_instance: bool) -> Result<(), String> {
     let mut command = std::process::Command::new("/usr/bin/open");
     if new_instance {
         command.arg("-n");
     }
-    if !target.starts_with('/') {
+    // Paths and URLs (x-apple.systempreferences:…) open as they are; a bare
+    // name is an app name.
+    if !target.starts_with('/') && !target.contains(':') {
         command.arg("-a");
     }
     let status = command.arg(target).status().map_err(|e| e.to_string())?;

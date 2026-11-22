@@ -5,9 +5,13 @@ pub mod commands;
 pub mod apps;
 mod ax;
 mod extras;
+mod hardware;
 mod interaction;
 mod media;
+mod metrics;
 mod native_dock;
+mod system;
+mod wifi;
 mod window;
 
 use crate::{i18n, settings_commands};
@@ -160,6 +164,7 @@ pub fn run() {
             interaction::spawn_worker(app.handle().clone());
             watch_windows(app.handle().clone());
             media::spawn_worker(app.handle().clone());
+            watch_volume_and_brightness(app.handle().clone());
             restore_on_signals(app.handle().clone());
             build_menu_bar_icon(app)?;
             Ok(())
@@ -192,6 +197,41 @@ fn restore_on_signals(app: tauri::AppHandle) {
             }
         })
         .expect("failed to start the signal watcher");
+}
+
+/// Sends `volume-change` and `brightness-change` when the keyboard keys or
+/// Control Center change them, checking twice a second (in-process reads).
+fn watch_volume_and_brightness(app: tauri::AppHandle) {
+    use tauri::Emitter;
+    std::thread::Builder::new()
+        .name("bloom-levels".into())
+        .spawn(move || {
+            let mut last_volume = None;
+            let mut last_brightness = None;
+            while !crate::state::SHUTTING_DOWN.load(std::sync::atomic::Ordering::Relaxed) {
+                if let (Ok(volume), Ok(muted)) = (hardware::volume(), hardware::muted()) {
+                    let now = ((volume * 100.0).round() as u32, muted);
+                    if last_volume.is_some_and(|l| l != now) {
+                        let _ = app.emit(
+                            "volume-change",
+                            crate::types::VolumeChangeEvent { volume, is_muted: muted },
+                        );
+                    }
+                    last_volume = Some(now);
+                }
+                if let Ok(brightness) = hardware::brightness() {
+                    if last_brightness.is_some_and(|l| l != brightness) {
+                        let _ = app.emit(
+                            "brightness-change",
+                            crate::types::BrightnessChangeEvent { brightness },
+                        );
+                    }
+                    last_brightness = Some(brightness);
+                }
+                std::thread::sleep(std::time::Duration::from_millis(500));
+            }
+        })
+        .expect("failed to start the level watcher");
 }
 
 /// Tells the dock when apps or windows come and go, checking once a second.

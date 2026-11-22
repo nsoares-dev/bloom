@@ -210,6 +210,11 @@ fn media_command(command: &str) {
     });
 }
 
+/// Opens a System Settings pane by its extension id.
+fn open_settings_pane(pane: &str) -> Result<(), String> {
+    super::apps::open(&format!("x-apple.systempreferences:{pane}"), false)
+}
+
 // ---- Not ported yet ----
 
 #[tauri::command]
@@ -248,17 +253,17 @@ pub fn hide_native_osd() {
 
 #[tauri::command]
 pub fn open_wifi_settings() {
-    unsupported("open_wifi_settings");
+    let _ = open_settings_pane("com.apple.wifi-settings-extension");
 }
 
 #[tauri::command]
 pub fn open_sound_settings() {
-    unsupported("open_sound_settings");
+    let _ = open_settings_pane("com.apple.Sound-Settings.extension");
 }
 
 #[tauri::command]
 pub fn open_notification_center() {
-    unsupported("open_notification_center");
+    let _ = open_settings_pane("com.apple.Notifications-Settings.extension");
 }
 
 #[tauri::command]
@@ -545,22 +550,24 @@ pub async fn close_window(hwnd: isize) {
 
 #[tauri::command]
 pub fn get_volume() -> f32 {
-    0.0
+    super::hardware::volume().unwrap_or(0.0)
 }
 
 #[tauri::command]
 pub async fn get_volume_state() -> Result<VolumeChangeEvent, String> {
-    Err(unsupported("get_volume_state"))
+    Ok(VolumeChangeEvent { volume: super::hardware::volume()?, is_muted: super::hardware::muted()? })
 }
 
 #[tauri::command]
 pub fn get_brightness() -> u32 {
-    0
+    super::hardware::brightness().unwrap_or(0)
 }
 
 #[tauri::command]
 pub fn set_volume(volume: f32) {
-    unsupported("set_volume");
+    if let Err(error) = super::hardware::set_volume(volume) {
+        crate::diagnostics::record("set_volume", &error);
+    }
 }
 
 #[tauri::command]
@@ -600,77 +607,82 @@ pub async fn capture_window_thumbnail(
 
 #[tauri::command]
 pub async fn get_wifi_status() -> Result<WifiStatus, String> {
-    Err(unsupported("get_wifi_status"))
+    tauri::async_runtime::spawn_blocking(super::wifi::status).await.map_err(|e| e.to_string())?
 }
 
 #[tauri::command]
 pub async fn set_wifi_state(enabled: bool) -> Result<(), String> {
-    Err(unsupported("set_wifi_state"))
+    tauri::async_runtime::spawn_blocking(move || super::wifi::set_power(enabled)).await.map_err(|e| e.to_string())?
 }
 
 #[tauri::command]
 pub async fn get_bluetooth_state() -> Result<bool, String> {
-    Err(unsupported("get_bluetooth_state"))
+    tauri::async_runtime::spawn_blocking(super::hardware::bluetooth_powered).await.map_err(|e| e.to_string())?
 }
 
 #[tauri::command]
 pub async fn set_bluetooth_state(enabled: bool) -> Result<(), String> {
-    Err(unsupported("set_bluetooth_state"))
+    tauri::async_runtime::spawn_blocking(move || super::hardware::set_bluetooth_powered(enabled)).await.map_err(|e| e.to_string())?
 }
 
 #[tauri::command]
 pub fn open_bluetooth_settings() {
-    unsupported("open_bluetooth_settings");
+    let _ = open_settings_pane("com.apple.BluetoothSettings");
 }
 
 #[tauri::command]
 pub fn open_airplane_mode_settings() {
-    unsupported("open_airplane_mode_settings");
+    // macOS has no airplane mode; the interface hides its tile on a Mac.
 }
 
 #[tauri::command]
 pub fn set_brightness(app: AppHandle, brightness: u32) {
-    unsupported("set_brightness");
+    if let Err(error) = super::hardware::set_brightness(brightness) {
+        crate::diagnostics::record("set_brightness", &error);
+    }
 }
 
 #[tauri::command]
 pub async fn get_battery_saver_state() -> Result<bool, String> {
-    Err(unsupported("get_battery_saver_state"))
+    tauri::async_runtime::spawn_blocking(super::system::low_power).await.map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 pub fn open_battery_saver_settings() {
-    unsupported("open_battery_saver_settings");
+    let _ = open_settings_pane("com.apple.Battery-Settings.extension");
 }
 
 #[tauri::command]
 pub async fn get_battery_details() -> Result<serde_json::Value, String> {
-    Err(unsupported("get_battery_details"))
+    tauri::async_runtime::spawn_blocking(super::system::battery)
+        .await
+        .map_err(|e| e.to_string())
+        .and_then(|d| serde_json::to_value(d).map_err(|e| e.to_string()))
 }
 
 #[tauri::command]
 pub fn get_system_accent_color() -> Result<String, String> {
-    Err(unsupported("get_system_accent_color"))
+    Ok(super::system::accent_color())
 }
 
 #[tauri::command]
 pub fn get_cpu_usage() -> Result<u32, String> {
-    Err(unsupported("get_cpu_usage"))
+    Ok(super::metrics::cpu_percent())
 }
 
 #[tauri::command]
 pub fn get_ram_usage() -> Result<f32, String> {
-    Err(unsupported("get_ram_usage"))
+    Ok(super::metrics::ram_percent())
 }
 
 #[tauri::command]
 pub fn get_disk_space() -> Result<u64, String> {
-    Err(unsupported("get_disk_space"))
+    super::metrics::free_disk_gb()
 }
 
 #[tauri::command]
 pub fn get_network_speed() -> Result<(u64, u64), String> {
-    Err(unsupported("get_network_speed"))
+    Ok(super::metrics::network_bytes_per_second())
 }
 
 #[tauri::command]
@@ -758,32 +770,38 @@ pub async fn get_dock_drives() -> Vec<serde_json::Value> {
 
 #[tauri::command]
 pub async fn wifi_list_networks() -> Result<serde_json::Value, String> {
-    Err(unsupported("wifi_list_networks"))
+    tauri::async_runtime::spawn_blocking(super::wifi::list)
+        .await
+        .map_err(|e| e.to_string())?
+        .and_then(|list| serde_json::to_value(list).map_err(|e| e.to_string()))
 }
 
 #[tauri::command]
 pub async fn wifi_scan() -> Result<(), String> {
-    Err(unsupported("wifi_scan"))
+    // wifi_list_networks scans each time it is called.
+    Ok(())
 }
 
 #[tauri::command]
 pub async fn wifi_connect(ssid: String, password: Option<String>) -> Result<(), String> {
-    Err(unsupported("wifi_connect"))
+    tauri::async_runtime::spawn_blocking(move || super::wifi::connect(&ssid, password.as_deref()))
+        .await
+        .map_err(|e| e.to_string())?
 }
 
 #[tauri::command]
 pub async fn wifi_disconnect() -> Result<(), String> {
-    Err(unsupported("wifi_disconnect"))
+    tauri::async_runtime::spawn_blocking(super::wifi::disconnect).await.map_err(|e| e.to_string())?
 }
 
 #[tauri::command]
 pub async fn wifi_forget(ssid: String) -> Result<(), String> {
-    Err(unsupported("wifi_forget"))
+    tauri::async_runtime::spawn_blocking(move || super::wifi::forget(&ssid)).await.map_err(|e| e.to_string())?
 }
 
 #[tauri::command]
 pub fn wifi_open_settings(page: String) -> Result<(), String> {
-    Err(unsupported("wifi_open_settings"))
+    open_settings_pane("com.apple.wifi-settings-extension")
 }
 
 #[tauri::command]

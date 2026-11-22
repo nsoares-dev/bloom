@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>NSBluetoothAlwaysUsageDescription</key>
+	<string>Bloom shows and connects your Bluetooth devices and their battery levels.</string>
+	<key>NSAppleEventsUsageDescription</key>
+	<string>Bloom shows what Spotify or Music is playing and controls playback.</string>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>macOS shares the Wi-Fi network name only with apps allowed to use location.</string>
+</dict>
+</plist>
